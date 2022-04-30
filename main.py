@@ -4,7 +4,8 @@ import discord
 from discord.ext import commands
 import logging
 import asyncio
-import youtube_dl
+from yandex_music import Client
+
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.DEBUG)
@@ -15,12 +16,14 @@ logger.addHandler(handler)
 intents = discord.Intents.default()
 intents.members = True
 server, server_id, channel_name = None, None, None
-domains = ['https://www.youtube.com', 'http://www.youtube.com', 'https://youtu.be', 'http://youtu.be']
+domains = ['https://music.yandex.ru', 'http://music.yandex.ru']
+client = Client().init()
 
 
 async def check_domains(link):
     for x in domains:
-        if link.startswith('x'):
+        if link.startswith(x):
+            print(link.startswith(x))
             return True
         return False
 
@@ -32,32 +35,20 @@ class RandomThings(commands.Cog):
     @commands.command(name='play')
     async def play(self, ctx, command=None):
         global server, server_id, channel_name
-        source = None
         author = ctx.author
-        if command is None:
-            server = ctx.guild
-            channel_name = author.voice.channel.name
-            voice_channel = discord.utils.get(server.voice_channels, name=channel_name)
+        # if command is None:
+        #     server = ctx.guild
+        #     channel_name = author.voice.channel.name
+        #     voice_channel = discord.utils.get(server.voice_channels, name=channel_name)
         params = command.split(' ')
         if len(params) == 1:
             source = params[0]
             server = ctx.guild
             channel_name = author.voice.channel.name
-            voice_channel = discord.utils.get(server.voice_channels, name=channel_name)
-        elif len(params) == 3:
-            server_id, voice_id, file_name = tuple(params)
-            try:
-                server_id = int(server_id)
-                voice_id = int(voice_id)
-            except ValueError:
-                await ctx.channel.send('Не робит')
-                return
-            server = bot.get_guild(server_id)
-            voice_channel = discord.utils.get(server.voice_channels, id=voice_id)
         else:
-            await ctx.channel.send(f'Не робит, но 2')
+            await ctx.channel.send(f'Команда имеет лишние данные')
             return
-        print(1)
+        voice_channel = discord.utils.get(server.voice_channels, name=channel_name)
         voice = discord.utils.get(bot.voice_clients, guild=server)
         if voice is None:
             await voice_channel.connect()
@@ -65,42 +56,51 @@ class RandomThings(commands.Cog):
         if source is None:
             pass
         elif source.startswith('http'):
-            if not check_domains(source):
-                await ctx.channel.send('Не робит, но 3')
+            if not await check_domains(source):
+                await ctx.channel.send('Неверно указана ссылка с сервера Яндекс.Музыки')
                 return
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'postprocessors': [
-                    {
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '192'
-                    }
-                ]
-            }
-            mp3 = True
-            with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-                print(111, source)
-                ydl.download([source])
-                print(222)
-            for file in os.listdir('./'):
-                if file.endswith('.mp3'):
-                    os.rename(file, 'song.mp3')
-                if file.endswith('.webm'):
-                    os.rename(file, 'song.webm')
-                    mp3 = False
-            print(12345)
-            if mp3:
-                voice.play(discord.FFmpegPCMAudio('song.mp3'))
-            else:
-                voice.play(discord.FFmpegPCMAudio('song.webm'))
+            source = source.split('/')
+            print(source)
+            album, track = source[4], source[6]
+            print(client.tracks([f'{track}:{album}'])[0].download('song.mp3', bitrate_in_kbps=128))
+            voice.play(discord.FFmpegPCMAudio('song.mp3'))
         else:
-            voice.play(discord.FFmpegPCMAudio(f'music/{source}'))
+            await ctx.channel.send('Неверный протокол')
+            return
+
+    @commands.command(name='pause')
+    async def pause(self, ctx):
+        print(1)
+        voice = discord.utils.get(bot.voice_clients, guild=server)
+        if voice.is_playing():
+            voice.pause()
+        else:
+            await ctx.channel.send('Музыка уже приостановлена')
+
+    @commands.command(name='resume')
+    async def resume(self, ctx):
+        voice = discord.utils.get(bot.voice_clients, guild=server)
+        if voice.is_playing():
+            await ctx.channel.send('Музыка уже воспроизводится')
+        else:
+            voice.resume()
+
+    @commands.command(name='stop')
+    async def stop(self, ctx):
+        voice = discord.utils.get(bot.voice_clients, guild=server)
+        voice.stop()
+
+    @commands.command(name='leave')
+    async def leave(self, ctx):
+        global server, channel_name
+        voice = discord.utils.get(bot.voice_clients, guild=server)
+        if voice.is_connected():
+            await voice.disconnect()
+        else:
+            await ctx.channel.send('Бот не находится в голосовом канале')
 
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 bot.add_cog(RandomThings(bot))
-TOKEN = "OTYxMjIwMjk4ODUyNjg3OTIy.Yk10KQ.i8OGWo5bKIeSRoTA-JvHwLFKlxI"
+TOKEN = ""
 bot.run(TOKEN)
-
-#OTYxMjIwMjk4ODUyNjg3OTIy.Yk10KQ.i8OGWo5bKIeSRoTA-JvHwLFKlxI
