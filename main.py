@@ -102,6 +102,5 @@ async def on_message(ctx):
     await bot.process_commands(ctx)
 
 bot.add_cog(ChatCommands(bot))
-TOKEN = "OTYxMjIwMjk4ODUyNjg3OTIy.Yk10KQ.uhwFKqUvMunyou7w8jYKo2lkrdg"
+TOKEN = ""
 bot.run(TOKEN)
-# OTYxMjIwMjk4ODUyNjg3OTIy.Yk10KQ.uhwFKqUvMunyou7w8jYKo2lkrdg
