@@ -2,6 +2,8 @@ import discord
 from discord.ext import commands
 import logging
 from database import DataBase
+from PIL import Image
+import requests
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.DEBUG)
@@ -34,14 +36,14 @@ async def check_count(ctx):
     return response
 
 
-async def give_role(ctx, role_name):
-    role = discord.utils.get(ctx.guild.roles, name=role_name)
-    await discord.Member.add_roles(ctx.author, role)
+async def remove_role(member, role_name):
+    role = discord.utils.get(member.guild.roles, name=role_name)
+    await member.remove_roles(role)
 
 
-async def mute(ctx):
-    await ctx.channel.purge(limit=1)
-    await give_role(ctx, 'Muted')
+async def give_role(member, role_name):
+    role = discord.utils.get(member.guild.roles, name=role_name)
+    await member.add_roles(role)
 
 
 class ChatCommands(commands.Cog):
@@ -80,6 +82,50 @@ class ChatCommands(commands.Cog):
         await msg.add_reaction('☑')
         await msg.add_reaction('❌')
 
+    @commands.command(name='ava')
+    async def avatar(self, ctx, *, member: discord.Member = None):
+        user_url = member.avatar_url
+        await ctx.send(user_url)
+
+    @commands.command(name='ban')
+    @commands.has_permissions(ban_members=True)
+    async def ban(self, ctx, member: discord.Member, *, reason=None):
+        await member.ban(reason=reason)
+        await ctx.channel.purge(limit=1)
+        await ctx.channel.send(f'Пользователь {member} был заблокирован. Причина: {reason}')
+        admin_channel = discord.utils.get(ctx.guild.text_channels, name='admin')
+        await admin_channel.send(f'Пользователь {member} был заблокирован. Причина: {reason}')
+
+    @commands.command(name='unban')
+    @commands.has_permissions(administrator=True)
+    async def unban(self, ctx, *member):
+        banned_users = await ctx.guild.bans()
+        member = ' '.join(member)
+        member_name, member_discriminator = member.split("#")
+        for person in banned_users:
+            user = person.user
+            if (user.name, user.discriminator) == (member_name, member_discriminator):
+                await ctx.guild.unban(user)
+                await ctx.channel.purge(limit=1)
+                admin_channel = discord.utils.get(ctx.guild.text_channels, name='admin')
+                await admin_channel.send(f'Пользователь {user.mention} разблокирован')
+
+    @commands.command(name='mute')
+    @commands.has_permissions(manage_roles=True)
+    async def mute(self, ctx, member: discord.Member, *, reason=None):
+        await give_role(member, 'Muted')
+        await ctx.channel.purge(limit=1)
+        await ctx.channel.send(f'Пользователю {member.mention} был выдан мут. Причина: {reason}')
+        admin_channel = discord.utils.get(ctx.guild.text_channels, name='admin')
+        await admin_channel.send(f'Пользователю {member.mention} был выдан мут. Причина: {reason}')
+
+    @commands.command(name='unmute')
+    @commands.has_permissions(manage_roles=True)
+    async def unmute(self, ctx, member: discord.Member):
+        await remove_role(member, 'Muted')
+        await ctx.channel.purge(limit=1)
+        await ctx.channel.send(f'С пользователя {member.mention} был снят мут.')
+
 
 @bot.event
 async def on_message(ctx):
@@ -96,11 +142,48 @@ async def on_message(ctx):
                     await ctx.delete()
                     await ctx.channel.send(f'{author.mention}, не используйте запрещенные слова!')
                 else:
-                    await mute(ctx)
+                    await give_role(author, 'Muted')
+                    await ctx.channel.purge(limit=1)
                     await ctx.channel.send(f'Пользователю {author.mention} был выдан мут из-за использования '
                                            f'запрещенных слов!')
+                admin_channel = discord.utils.get(ctx.guild.text_channels, name='admin')
+                embed = discord.Embed(title="Profanity Alert!",
+                                      description=f"{ctx.author.name} just said ||{word}||",
+                                      color=discord.Color.blurple())
+                await admin_channel.send(embed=embed)
     await bot.process_commands(ctx)
 
+
+@bot.event
+async def on_member_join(member):
+    server = member.guild
+    ava_url = member.avatar_url
+    response = requests.get(ava_url).content
+    user_invite = 'user_invite.jpg'
+    with open(user_invite, 'wb') as file:
+        file.write(response)
+    image_user = Image.open(user_invite)
+    image_user = image_user.convert('RGB')
+    image_user.save(user_invite)
+    image_user_small = image_user.resize((150, 150))
+    image_user_small.save('small_user.jpg')
+    invite_image = Image.open('invite.jpg')
+    pixels_invite = invite_image.load()
+    pixels_user = image_user_small.load()
+    x, y = invite_image.size
+    for i in range(x):
+        for j in range(y):
+            if 229 < i < 380 and 84 < j < 235:
+                r, g, b = pixels_user[i - 230, j - 85]
+                pixels_invite[i, j] = r, g, b
+    invite_image.save('final_user_invite.jpg')
+    with open('final_user_invite.jpg', 'rb') as file:
+        picture = discord.File(file)
+        channel = discord.utils.get(server.text_channels, name='приветствие')
+        await channel.send(f'По приветствуйте {member.mention}!')
+        await channel.send(file=picture)
+
+
 bot.add_cog(ChatCommands(bot))
-TOKEN = ""
+TOKEN = "OTYxMjIwMjk4ODUyNjg3OTIy.Yk10KQ.u3fJ3Jp7YiWIEW44ACZYsFrRwvk"
 bot.run(TOKEN)
