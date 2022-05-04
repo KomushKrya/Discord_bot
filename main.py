@@ -6,6 +6,7 @@ from PIL import Image
 import requests
 import random
 from yandex_music import Client
+import datetime as dt
 
 logger = logging.getLogger('discord')
 logger.setLevel(logging.DEBUG)
@@ -13,11 +14,15 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
 logger.addHandler(handler)
 
-db = DataBase('discord_bot.db')
+db = DataBase('data/discord_bot.db')
 
 city_game = False
 channel_game = None
 named_cities = []
+reactions = {'👌': 'Okay',
+             '👎': 'фигово'}
+roles_for_buying = {'Хорошая роль': 500,
+                    'Роль похуже': 200}
 
 server, server_id, channel_name = None, None, None
 domains = ['https://music.yandex.ru', 'http://music.yandex.ru']
@@ -29,7 +34,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 
 async def check_count(ctx):
-    global db
+    """Делает проверку того, сколько раз пользователь выругнулся. Каждый третий раз - мут"""
     user_id = ctx.author.id
     sql = f'SELECT counter FROM muted_users WHERE id = {user_id}'
     result = db.select_with_fetchone(sql)
@@ -48,16 +53,19 @@ async def check_count(ctx):
 
 
 async def remove_role(member, role_name):
+    """Забирает роль"""
     role = discord.utils.get(member.guild.roles, name=role_name)
     await member.remove_roles(role)
 
 
 async def give_role(member, role_name):
+    """Выдает роль"""
     role = discord.utils.get(member.guild.roles, name=role_name)
     await member.add_roles(role)
 
 
 async def play_city(ctx):
+    """Играет с пользователем в города"""
     global named_cities, city_game, channel_game
     user_city = ctx.content.lower()
     if named_cities and (named_cities[-1][-1] != user_city[0] and
@@ -74,7 +82,7 @@ async def play_city(ctx):
         named_cities = []
         channel_game = None
     else:
-        with open('cities.txt') as cities:
+        with open('data/cities.txt') as cities:
             cities_remake = []
             for city in cities:
                 if city.strip():
@@ -106,9 +114,9 @@ async def play_city(ctx):
 
 
 async def check_domains(link):
+    """Проверяет правильно ли указана ссылка"""
     for x in domains:
         if link.startswith(x):
-            print(link.startswith(x))
             return True
         return False
 
@@ -119,12 +127,12 @@ class MusicCommands(commands.Cog):
 
     @commands.command(name='play')
     async def play(self, ctx, command=None):
+        """Проигрывает музыку по ссылке"""
         global server, server_id, channel_name
         author = ctx.author
-        # if command is None:
-        #     server = ctx.guild
-        #     channel_name = author.voice.channel.name
-        #     voice_channel = discord.utils.get(server.voice_channels, name=channel_name)
+        if command is None:
+            server = ctx.guild
+            channel_name = author.voice.channel.name
         params = command.split(' ')
         if len(params) == 1:
             source = params[0]
@@ -145,17 +153,16 @@ class MusicCommands(commands.Cog):
                 await ctx.channel.send('Неверно указана ссылка с сервера Яндекс.Музыки')
                 return
             source = source.split('/')
-            print(source)
             album, track = source[4], source[6]
-            print(client.tracks([f'{track}:{album}'])[0].download('song.mp3', bitrate_in_kbps=128))
-            voice.play(discord.FFmpegPCMAudio('song.mp3'))
+            client.tracks([f'{track}:{album}'])[0].download('data/song.mp3', bitrate_in_kbps=128)
+            voice.play(discord.FFmpegPCMAudio('data/song.mp3'))
         else:
             await ctx.channel.send('Неверный протокол')
             return
 
     @commands.command(name='pause')
     async def pause(self, ctx):
-        print(1)
+        """Поставить музыку на паузу"""
         voice = discord.utils.get(bot.voice_clients, guild=server)
         if voice.is_playing():
             voice.pause()
@@ -164,6 +171,7 @@ class MusicCommands(commands.Cog):
 
     @commands.command(name='resume')
     async def resume(self, ctx):
+        """Продолжить воспроизведение музыки"""
         voice = discord.utils.get(bot.voice_clients, guild=server)
         if voice.is_playing():
             await ctx.channel.send('Музыка уже воспроизводится')
@@ -172,11 +180,14 @@ class MusicCommands(commands.Cog):
 
     @commands.command(name='stop')
     async def stop(self, ctx):
+        """Прекратить воспроизведение музыки"""
         voice = discord.utils.get(bot.voice_clients, guild=server)
-        voice.stop()
+        await voice.stop()
+        await ctx.channel.send('Воспроизведение прекращено')
 
     @commands.command(name='leave')
     async def leave(self, ctx):
+        """Заставляет бота покинуть голосовой канал"""
         global server, channel_name
         voice = discord.utils.get(bot.voice_clients, guild=server)
         if voice.is_connected():
@@ -196,7 +207,114 @@ class GameCommands(commands.Cog):
         channel_game = ctx.channel
         city_game = True
         named_cities = []
-        channel_game.send('Игра запущена!')
+        await channel_game.send('Игра запущена!')
+
+    @commands.command(name='give_admin')
+    @commands.has_permissions(administrator=True)
+    async def give_admin(self, ctx, count, member: discord.Member = None):
+        """Выдает пользователю указанную сумму средств"""
+        count = int(count)
+        sql = f'SELECT money FROM users_money WHERE id = {member.id}'
+        result = db.select_with_fetchone(sql)
+        if not result:
+            db.query(f'INSERT INTO users_money(id, money, time) VALUES ({member.id}, {count}, {"1"})')
+        else:
+            result = result[0]
+            db.query(f'UPDATE users_money SET money = {result + count} WHERE id = {member.id}')
+        await ctx.channel.send('Операция завершена')
+
+    @commands.command(name='give_money')
+    async def give_money(self, ctx, count, member: discord.Member = None):
+        """Пользователь передает деньги другому человеку"""
+        if not str(int(count)) == count or int(count) <= 0:
+            await ctx.channel.send('Неверно указано число средств для передачи')
+            return
+        count = int(count)
+        sql_author = f'SELECT money FROM users_money WHERE id = {ctx.author.id}'
+        sql_member = f'SELECT money FROM users_money WHERE id = {member.id}'
+        money_a = db.select_with_fetchone(sql_author)
+        money_m = db.select_with_fetchone(sql_member)
+        if not money_a:
+            db.query(f'INSERT INTO users_money(id, money, time) VALUES ({ctx.author.id}, {0}, {"1"})')
+            money_a = (0,)
+        if not money_m:
+            db.query(f'INSERT INTO users_money(id, money, time) VALUES ({member.id}, {0}, {"1"})')
+            money_m = (0,)
+        money_a, money_m = money_a[0], money_m[0]
+        if money_a > count:
+            db.query(f'UPDATE users_money SET money = {money_a - count} WHERE id = {ctx.author.id}')
+            db.query(f'UPDATE users_money SET money = {money_m + count} WHERE id = {member.id}')
+            await ctx.channel.send('Операция завершена')
+        else:
+            await ctx.channel.send('У вас нет таких денег!')
+
+    @commands.command(name='show_money')
+    async def show_money(self, ctx):
+        """Показывает сколько денег у пользователя"""
+        sql = f'SELECT money FROM users_money WHERE id = {ctx.author.id}'
+        result = db.select_with_fetchone(sql)
+        if not result:
+            db.query(f'INSERT INTO users_money(id, money, time) VALUES ({ctx.author.id}, {0}, {"1"})')
+            result = (0,)
+        await ctx.channel.send(f'Ваш баланс: {result[0]}')
+
+    @commands.command(name='daily')
+    async def daily(self, ctx):
+        """Выдает ежедневную награду"""
+        sql = f'SELECT time, money FROM users_money WHERE id = {ctx.author.id}'
+        result = db.select_with_fetchone(sql)
+        if not result:
+            db.query(f'INSERT INTO users_money(id, money, time) '
+                     f'VALUES ({ctx.author.id}, {10}, datetime("now"))')
+            await ctx.send('Операция завершена')
+            return
+        time_get, money = result
+        if time_get == 1 or time_get == '1':
+            db.query(f'UPDATE users_money SET money = {money + 10} WHERE id = {ctx.author.id}')
+            db.query(f'UPDATE users_money SET time = datetime("now") WHERE id = {ctx.author.id}')
+            await ctx.channel.send('Операция завершена')
+        else:
+            time_get = time_get.split()
+            time_get = time_get[0].split('-') + time_get[1].split(':')
+            time_get = [int(x) for x in time_get]
+            time = dt.datetime(time_get[0], time_get[1], time_get[2],
+                               time_get[3], time_get[4], time_get[5]) + dt.timedelta(hours=7)
+            if time + dt.timedelta(hours=24) > dt.datetime.now():
+                await ctx.send('Сутки еще не прошли!')
+            else:
+                db.query(f'UPDATE users_money SET money = {money + 10} WHERE id = {ctx.author.id}')
+                db.query(f'UPDATE users_money SET time = datetime("now") WHERE id = {ctx.author.id}')
+                await ctx.channel.send('Операция завершена')
+            pass
+
+    @commands.command(name='show_roles')
+    async def show_roles(self, ctx):
+        """Показывает какие роли доступны для покупки"""
+        roles = []
+        for key in roles_for_buying.keys():
+            roles.append(f'{key}: {roles_for_buying[key]}')
+        await ctx.send('\n'.join(roles))
+
+    @commands.command(name='buy_role')
+    async def buy_role(self, ctx, *role_name):
+        """Купить роль"""
+        role_name = ' '.join(role_name)
+        sql = f'SELECT money FROM users_money WHERE id = {ctx.author.id}'
+        result = db.select_with_fetchone(sql)
+        if not result:
+            db.query(f'INSERT INTO users_money(id, money, time) VALUES ({ctx.author.id}, {0}, {"1"})')
+            result = (0,)
+        result = result[0]
+        role = discord.utils.get(ctx.guild.roles, name=role_name)
+        if not role:
+            await ctx.send('Вы неверно указали роль для покупки')
+        elif result < roles_for_buying[role_name]:
+            await ctx.send('У вас недостаточно средств!')
+        else:
+            await give_role(ctx.author, role_name)
+            db.query(f'UPDATE users_money '
+                     f'SET money = {result - roles_for_buying[role_name]} WHERE id = {ctx.author.id}')
+            await ctx.send('Роль куплена!')
 
 
 class ChatCommands(commands.Cog):
@@ -287,10 +405,11 @@ class ChatCommands(commands.Cog):
 
 @bot.event
 async def on_message(ctx):
+    """Первичная проверка сообщения"""
     if ctx.author == bot.user:
         return
     author = ctx.author
-    with open('ban_words.txt', encoding='utf8') as bw:
+    with open('data/ban_words.txt', encoding='utf8') as bw:
         for word in bw:
             word = word.strip()
             if word in ctx.content.lower():
@@ -316,17 +435,18 @@ async def on_message(ctx):
 
 @bot.event
 async def on_member_join(member):
+    """Здоровается с пользователем в соответствующем канале"""
     ava_url = member.avatar_url
     response = requests.get(ava_url).content
-    user_invite = 'user_invite.jpg'
+    user_invite = 'data/user_invite.jpg'
     with open(user_invite, 'wb') as file:
         file.write(response)
     image_user = Image.open(user_invite)
     image_user = image_user.convert('RGB')
     image_user.save(user_invite)
     image_user_small = image_user.resize((150, 150))
-    image_user_small.save('small_user.jpg')
-    invite_image = Image.open('invite.jpg')
+    image_user_small.save('data/small_user.jpg')
+    invite_image = Image.open('data/invite.jpg')
     pixels_invite = invite_image.load()
     pixels_user = image_user_small.load()
     x, y = invite_image.size
@@ -335,12 +455,27 @@ async def on_member_join(member):
             if 229 < i < 380 and 84 < j < 235:
                 r, g, b = pixels_user[i - 230, j - 85]
                 pixels_invite[i, j] = r, g, b
-    invite_image.save('final_user_invite.jpg')
-    with open('final_user_invite.jpg', 'rb') as file:
+    invite_image.save('data/final_user_invite.jpg')
+    with open('data/final_user_invite.jpg', 'rb') as file:
         picture = discord.File(file)
         channel = discord.utils.get(member.guild.text_channels, name='приветствие')
-        await channel.send(f'По приветствуйте {member.mention}!')
-        await channel.send(file=picture)
+        await channel.send(f'Поприветствуйте {member.mention}!')
+        msg = await channel.send(file=picture)
+        await msg.add_reaction('👍')
+
+
+@bot.event
+async def on_raw_reaction_add(payload):
+    """Добавляет пользователю роль при нажатии на соответствующую реакцию"""
+    reaction = payload.emoji.name
+    user = payload.member
+    channel = bot.get_channel(970705900740423701)
+    if channel.id != payload.channel_id:
+        return
+    try:
+        await give_role(user, reactions[reaction])
+    except KeyError:
+        return
 
 
 bot.add_cog(ChatCommands(bot))
