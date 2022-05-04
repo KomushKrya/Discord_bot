@@ -42,6 +42,7 @@ async def check_count(ctx):
         db.query(f'INSERT INTO muted_users(id, counter) VALUES ({user_id}, {0})')
         result = (0,)
     result = result[0] + 1
+    print(type(result), user_id)
     db.query(f'UPDATE muted_users '
              f'SET counter = {result} '
              f'WHERE id = {user_id}')
@@ -99,10 +100,11 @@ async def play_city(ctx):
                 for city in cities:
                     if city[0].lower() == user_city[-1] or \
                             city[0].lower() == user_city[-2] and user_city[-1] in ('ы', 'ь', 'ъ', 'й'):
-                        good_cities.append(city)
+                        if city not in named_cities:
+                            good_cities.append(city)
                 try:
                     final_city = random.choice(good_cities)
-                except ValueError:
+                except IndexError:
                     await ctx.channel.send(f'Этого не может быть... У меня закончились города! Вы победили! '
                                            f'За время игры было названо {len(named_cities)} городов.')
                     city_game = False
@@ -481,5 +483,5 @@ async def on_raw_reaction_add(payload):
 bot.add_cog(ChatCommands(bot))
 bot.add_cog(GameCommands(bot))
 bot.add_cog(MusicCommands(bot))
-TOKEN = "OTYxMjIwMjk4ODUyNjg3OTIy.Yk10KQ.Cts8ZF82r0uFA8kQCBpD-lIUY5o"
+TOKEN = "OTYxMjIwMjk4ODUyNjg3OTIy.Yk10KQ.DUUNE0M7tSP1kxv2cdJ8J8RUnws"
 bot.run(TOKEN)
