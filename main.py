@@ -483,5 +483,5 @@ async def on_raw_reaction_add(payload):
 bot.add_cog(ChatCommands(bot))
 bot.add_cog(GameCommands(bot))
 bot.add_cog(MusicCommands(bot))
-TOKEN = "OTYxMjIwMjk4ODUyNjg3OTIy.Yk10KQ.DUUNE0M7tSP1kxv2cdJ8J8RUnws"
+TOKEN = "token"
 bot.run(TOKEN)
