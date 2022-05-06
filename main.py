@@ -165,6 +165,7 @@ class MusicCommands(commands.Cog):
     @commands.command(name='pause')
     async def pause(self, ctx):
         """Поставить музыку на паузу"""
+        await ctx.channel.purge(limit=1)
         voice = discord.utils.get(bot.voice_clients, guild=server)
         if voice.is_playing():
             voice.pause()
@@ -174,6 +175,7 @@ class MusicCommands(commands.Cog):
     @commands.command(name='resume')
     async def resume(self, ctx):
         """Продолжить воспроизведение музыки"""
+        await ctx.channel.purge(limit=1)
         voice = discord.utils.get(bot.voice_clients, guild=server)
         if voice.is_playing():
             await ctx.channel.send('Музыка уже воспроизводится')
@@ -183,6 +185,7 @@ class MusicCommands(commands.Cog):
     @commands.command(name='stop')
     async def stop(self, ctx):
         """Прекратить воспроизведение музыки"""
+        await ctx.channel.purge(limit=1)
         voice = discord.utils.get(bot.voice_clients, guild=server)
         await voice.stop()
         await ctx.channel.send('Воспроизведение прекращено')
@@ -190,6 +193,7 @@ class MusicCommands(commands.Cog):
     @commands.command(name='leave')
     async def leave(self, ctx):
         """Заставляет бота покинуть голосовой канал"""
+        await ctx.channel.purge(limit=1)
         global server, channel_name
         voice = discord.utils.get(bot.voice_clients, guild=server)
         if voice.is_connected():
@@ -205,6 +209,7 @@ class GameCommands(commands.Cog):
     @commands.command(name='city')
     async def city(self, ctx):
         """Запускает игру Города"""
+        await ctx.channel.purge(limit=1)
         global city_game, channel_game, named_cities
         channel_game = ctx.channel
         city_game = True
@@ -215,6 +220,7 @@ class GameCommands(commands.Cog):
     @commands.has_permissions(administrator=True)
     async def give_admin(self, ctx, count, member: discord.Member = None):
         """Выдает пользователю указанную сумму средств"""
+        await ctx.channel.purge(limit=1)
         count = int(count)
         sql = f'SELECT money FROM users_money WHERE id = {member.id}'
         result = db.select_with_fetchone(sql)
@@ -228,6 +234,7 @@ class GameCommands(commands.Cog):
     @commands.command(name='give_money')
     async def give_money(self, ctx, count, member: discord.Member = None):
         """Пользователь передает деньги другому человеку"""
+        await ctx.channel.purge(limit=1)
         if not str(int(count)) == count or int(count) <= 0:
             await ctx.channel.send('Неверно указано число средств для передачи')
             return
@@ -253,6 +260,7 @@ class GameCommands(commands.Cog):
     @commands.command(name='show_money')
     async def show_money(self, ctx):
         """Показывает сколько денег у пользователя"""
+        await ctx.channel.purge(limit=1)
         sql = f'SELECT money FROM users_money WHERE id = {ctx.author.id}'
         result = db.select_with_fetchone(sql)
         if not result:
@@ -263,6 +271,7 @@ class GameCommands(commands.Cog):
     @commands.command(name='daily')
     async def daily(self, ctx):
         """Выдает ежедневную награду"""
+        await ctx.channel.purge(limit=1)
         sql = f'SELECT time, money FROM users_money WHERE id = {ctx.author.id}'
         result = db.select_with_fetchone(sql)
         if not result:
@@ -292,6 +301,7 @@ class GameCommands(commands.Cog):
     @commands.command(name='show_roles')
     async def show_roles(self, ctx):
         """Показывает какие роли доступны для покупки"""
+        await ctx.channel.purge(limit=1)
         roles = []
         for key in roles_for_buying.keys():
             roles.append(f'{key}: {roles_for_buying[key]}')
@@ -300,6 +310,7 @@ class GameCommands(commands.Cog):
     @commands.command(name='buy_role')
     async def buy_role(self, ctx, *role_name):
         """Купить роль"""
+        await ctx.channel.purge(limit=1)
         role_name = ' '.join(role_name)
         sql = f'SELECT money FROM users_money WHERE id = {ctx.author.id}'
         result = db.select_with_fetchone(sql)
@@ -325,7 +336,8 @@ class ChatCommands(commands.Cog):
 
     @commands.command(name='elect')
     async def elect(self, ctx, *, command):
-        """Позволяет создавать небольшие опросы"""
+        """Позволяет создавать небольшие опросы
+        Передаются текст, цвет(HEX-формат) и заголовок через /"""
         params = command.split('/')
         if len(params) == 1:
             text = command
@@ -358,6 +370,7 @@ class ChatCommands(commands.Cog):
     @commands.command(name='ava')
     async def avatar(self, ctx, *, member: discord.Member = None):
         """Выдает аватарку указанного пользователя"""
+        await ctx.channel.purge(limit=1)
         user_url = member.avatar_url
         await ctx.send(user_url)
 
@@ -404,6 +417,16 @@ class ChatCommands(commands.Cog):
         await ctx.channel.purge(limit=1)
         await ctx.channel.send(f'С пользователя {member.mention} был снят мут.')
 
+    @commands.command(name='clear')
+    @commands.has_permissions(manage_messages=True)
+    async def clear(self, ctx, num):
+        try:
+            num = int(num)
+            await ctx.channel.purge(limit=num + 1)
+        except ValueError:
+            await ctx.channel.purge(limit=1)
+            await ctx.send('Неверно указано число')
+            
 
 @bot.event
 async def on_message(ctx):
@@ -483,5 +506,5 @@ async def on_raw_reaction_add(payload):
 bot.add_cog(ChatCommands(bot))
 bot.add_cog(GameCommands(bot))
 bot.add_cog(MusicCommands(bot))
-TOKEN = "token"
+TOKEN = "TOKEN"
 bot.run(TOKEN)
